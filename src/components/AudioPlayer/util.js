@@ -1,81 +1,33 @@
 import axios from 'axios'
-import WebAudio from '../wavesurfer/webaudio'
 
-export default class Aduio extends WebAudio {
-  constructor(url) {
-    this.init(url)
-  }
-
-  init(url) {
-    this.loadBuffer(url, peaks, duration)
-  }
-  /**
-   * Loads audio using Web Audio buffer backend.
-   *
-   * @private
-   * @param {string} url
-   */
-  loadBuffer(url) {
-    return this.getArrayBuffer(url, data => this.loadArrayBuffer(data))
-  }
-  /**
-   * Load an array buffer by ajax and pass to a callback
-   *
-   * @param {string} url
-   * @param {function} callback
-   * @private
-   */
-  getArrayBuffer(url, callback) {
-    this.currentAjax = axios({
-      url,
-      responseType: 'arraybuffer',
-      onDownloadProgress(e) {
-        console.log(e)
-      }
-    })
-      .then(res => {
-        callback(res.data)
-        this.currentAjax = null
-      })
-      .catch(e => {
-        // this.fireEvent('error', 'XHR error: ' + e.target.statusText)
-        this.currentAjax = null
-      })
-
-    return this.currentAjax
-  }
-
-  onProgress() {}
-
-  /**
-   * Decode buffer and load
-   *
-   * @private
-   * @param {ArrayBuffer} arraybuffer
-   */
-  loadArrayBuffer(arraybuffer) {
-    this.decodeArrayBuffer(arraybuffer, data => {
-      if (!this.isDestroyed) {
-        this.load(data)
-      }
-    })
-  }
-}
-
-class Peaks {
-  constructor(buffer) {
+export class Audio {
+  constructor (url, buffer) {
     this.buffer = buffer
+    this.url = url
     this.init()
   }
-  init() {
+
+  async getBuffer (url = this.url) {
+    const audioCtx = new window.AudioContext()
+    const { data: arrayBuffer } = await axios({
+      url,
+      responseType: 'arraybuffer'
+    })
+    const decodedData = await audioCtx.decodeAudioData(arrayBuffer)
+    this.buffer = decodedData
+    return decodedData
+  }
+
+  init () {
     this.splitPeaks = []
     this.mergedPeaks = null
     this.splitChannels = false
     this.peaks = null
+    this.getBuffer(this.url)
   }
-  setLength(length) {
+  setLength (length) {
     // No resize, we can preserve the cached peaks.
-    if (this.mergedPeaks && length == 2 * this.mergedPeaks.length - 1 + 2) {
+    if (this.mergedPeaks && length === 2 * this.mergedPeaks.length - 1 + 2) {
       return
     }
 
@@ -93,7 +45,7 @@ class Peaks {
     this.mergedPeaks[2 * (length - 1)] = 0
     this.mergedPeaks[2 * (length - 1) + 1] = 0
   }
-  getPeaks(length, first, last) {
+  _getPeaks (length, first, last) {
     if (this.peaks) {
       return this.peaks
     }
@@ -154,16 +106,39 @@ class Peaks {
         peaks[2 * i] = max
         peaks[2 * i + 1] = min
 
-        if (c == 0 || max > this.mergedPeaks[2 * i]) {
+        if (c === 0 || max > this.mergedPeaks[2 * i]) {
           this.mergedPeaks[2 * i] = max
         }
 
-        if (c == 0 || min < this.mergedPeaks[2 * i + 1]) {
+        if (c === 0 || min < this.mergedPeaks[2 * i + 1]) {
           this.mergedPeaks[2 * i + 1] = min
         }
       }
     }
 
-    return this.splitChannels ? this.splitPeaks : this.mergedPeaks
+    this.peaks = this.splitChannels ? this.splitPeaks : this.mergedPeaks
+    return this.peaks
+  }
+  async getPeaks (length, first, last) {
+    if (!this.buffer) await this.getBuffer()
+    return this._getPeaks(length, first, last)
+  }
+}
+
+export class UnitBezier {
+  constructor (p1x, p1y, p2x, p2y) {
+    this.cx = 3.0 * p1x
+    this.bx = 3.0 * (p2x - p1x) - this.cx
+    this.ax = 1.0 - this.cx - this.bx
+    this.cy = 3.0 * p1y
+    this.by = 3.0 * (p2y - p1y) - this.cy
+    this.ay = 1.0 - this.cy - this.by
+  }
+  // sampleCurveX
+  getXY (t) {
+    return {
+      x: ((this.ax * t + this.bx) * t + this.cx) * t,
+      y: ((this.ay * t + this.by) * t + this.cy) * t
+    }
   }
 }
